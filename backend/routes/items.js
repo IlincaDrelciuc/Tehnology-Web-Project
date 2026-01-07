@@ -3,6 +3,7 @@ const router = express.Router();
 
 const authenticateToken = require('../middleware/auth');
 const { Item } = require('../models');
+const { Op } = require('sequelize');
 
 router.use(authenticateToken);
 

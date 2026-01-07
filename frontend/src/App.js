@@ -6,6 +6,7 @@ function App() {
 
   const [message, setMessage] = useState('');
   const [items, setItems] = useState([]);
+  const [shareableItems, setShareableItems] = useState([]);
   const [token, setToken] = useState(localStorage.getItem('token') || '');
 
   const [newName, setNewName] = useState('');
@@ -55,6 +56,32 @@ function App() {
       }
     }
   }
+
+  async function loadShareableItems() {
+  setMessage('');
+
+  const response = await fetch('/api/items/shareable', {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+
+  const data = await response.json();
+
+  if (response.ok) {
+    setShareableItems(data);
+    setMessage('Shareable items loaded!');
+  } else {
+    const msg = data.message || data.error || 'Could not load shareable items';
+    setMessage(msg);
+
+    if (msg.includes('Invalid or expired token')) {
+      localStorage.removeItem('token');
+      setToken('');
+      setItems([]);
+      setShareableItems([]);
+    }
+  }
+}
+
 
   async function addItem() {
     setMessage('');
@@ -121,7 +148,9 @@ function App() {
         <div>
           <div style={{ marginBottom: 10 }}>
             <button onClick={loadItems}>Load my items</button>{' '}
+            <button onClick={loadShareableItems}>Load shareable items</button>{' '}
             <button onClick={logout}>Logout</button>
+
           </div>
 
           {message && <p><b>{message}</b></p>}
@@ -165,6 +194,21 @@ function App() {
               ))}
             </ul>
           )}
+
+          <h2 style={{ marginTop: 25 }}>Available to claim</h2>
+
+{shareableItems.length === 0 ? (
+  <p>No shareable items from other users right now.</p>
+) : (
+  <ul>
+    {shareableItems.map((item) => (
+      <li key={item.id}>
+        <b>{item.name}</b> — expires {item.expiry_date}
+      </li>
+    ))}
+  </ul>
+)}
+
         </div>
       )}
     </div>
