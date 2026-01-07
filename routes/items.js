@@ -48,7 +48,7 @@ router.put('/:id', (req, res) => {
     const sql = `
         UPDATE items SET 
             name = ?, category = ?, quantity = ?, expiry_date = ?, is_shareable = ?
-        WHERE id = ? AND user_id = ? // Also check user_id for security
+        WHERE id = ? AND user_id = ? 
     `;
     const params = [name, category, quantity, expiry_date, shareableFlag, item_id, user_id];
 
