@@ -82,7 +82,9 @@ router.get('/invites', async (req, res) => {
     const userId = req.user.userId;
 
     const invites = await GroupInvite.findAll({
-      where: { invited_user_id: userId, status: 'pending' }
+      where: { invited_user_id: userId, status: 'pending' },
+      include: [{ model: Group, attributes: ['id', 'name'] }],
+      order: [['id', 'DESC']]
     });
 
     res.json(invites);

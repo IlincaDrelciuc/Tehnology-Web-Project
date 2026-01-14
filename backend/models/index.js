@@ -22,6 +22,9 @@ Group.hasMany(GroupInvite, { foreignKey: 'group_id' });
 GroupInvite.belongsTo(Group, { foreignKey: 'group_id' });
 
 User.hasMany(GroupInvite, { foreignKey: 'inviter_user_id' });
+GroupInvite.belongsTo(User, { foreignKey: 'inviter_user_id', as: 'inviter' });
+
 User.hasMany(GroupInvite, { foreignKey: 'invited_user_id' });
+GroupInvite.belongsTo(User, { foreignKey: 'invited_user_id', as: 'invited' });
 
 module.exports = { sequelize, User, Item, Group, GroupMember, GroupInvite };

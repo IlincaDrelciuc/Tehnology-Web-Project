@@ -7,6 +7,14 @@ const { Op } = require('sequelize');
 
 router.use(authenticateToken);
 
+/**
+ * Get items available to claim for current user:
+ * - shareable
+ * - not claimed
+ * - not owned by current user
+ * - public OR shared to a group user is a member of
+ * GET /api/items/shareable
+ */
 router.get('/shareable', async (req, res) => {
   try {
     const user_id = req.user.userId;
@@ -33,6 +41,10 @@ router.get('/shareable', async (req, res) => {
   }
 });
 
+/**
+ * Create item in my fridge
+ * POST /api/items
+ */
 router.post('/', async (req, res) => {
   const user_id = req.user.userId;
   const { name, category, quantity, expiry_date, is_shareable, shared_group_id } = req.body;
@@ -47,7 +59,9 @@ router.post('/', async (req, res) => {
     if (is_shareable && shared_group_id) {
       const group = await Group.findByPk(Number(shared_group_id));
       if (!group) return res.status(400).json({ error: 'Group does not exist' });
-      if (group.owner_user_id !== user_id) return res.status(403).json({ error: 'You can only share to your own groups' });
+      if (group.owner_user_id !== user_id) {
+        return res.status(403).json({ error: 'You can only share to your own groups' });
+      }
       groupIdToSave = group.id;
     }
 
@@ -67,6 +81,10 @@ router.post('/', async (req, res) => {
   }
 });
 
+/**
+ * Get my items
+ * GET /api/items
+ */
 router.get('/', async (req, res) => {
   const user_id = req.user.userId;
 
@@ -82,6 +100,10 @@ router.get('/', async (req, res) => {
   }
 });
 
+/**
+ * Update my item
+ * PUT /api/items/:id
+ */
 router.put('/:id', async (req, res) => {
   const user_id = req.user.userId;
   const item_id = req.params.id;
@@ -98,7 +120,9 @@ router.put('/:id', async (req, res) => {
     if (is_shareable && shared_group_id) {
       const group = await Group.findByPk(Number(shared_group_id));
       if (!group) return res.status(400).json({ error: 'Group does not exist' });
-      if (group.owner_user_id !== user_id) return res.status(403).json({ error: 'You can only share to your own groups' });
+      if (group.owner_user_id !== user_id) {
+        return res.status(403).json({ error: 'You can only share to your own groups' });
+      }
       groupIdToSave = group.id;
     }
 
@@ -117,6 +141,10 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+/**
+ * Delete my item
+ * DELETE /api/items/:id
+ */
 router.delete('/:id', async (req, res) => {
   const user_id = req.user.userId;
   const item_id = req.params.id;
@@ -130,6 +158,12 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+/**
+ * Claim a shareable item:
+ * - item becomes owned by claimant (moves into their fridge)
+ * - item becomes not shareable anymore
+ * POST /api/items/:id/claim
+ */
 router.post('/:id/claim', async (req, res) => {
   const user_id = req.user.userId;
   const item_id = req.params.id;
@@ -141,6 +175,15 @@ router.post('/:id/claim', async (req, res) => {
     if (!item.is_shareable) return res.status(400).json({ error: 'Item is not shareable.' });
     if (item.claimed_by) return res.status(409).json({ error: 'Item already claimed.' });
     if (item.user_id === user_id) return res.status(400).json({ error: 'You cannot claim your own item.' });
+
+    if (item.shared_group_id) {
+      const membership = await GroupMember.findOne({
+        where: { group_id: item.shared_group_id, user_id }
+      });
+      if (!membership) {
+        return res.status(403).json({ error: 'This item is shared to a group you are not in.' });
+      }
+    }
 
     item.user_id = user_id;
     item.is_shareable = false;

@@ -7,15 +7,12 @@ const { sequelize } = require('./models');
 const authRoutes = require('./routes/auth');
 const itemRoutes = require('./routes/items');
 const groupRoutes = require('./routes/groups');
-const externalRoutes = require('./routes/external');
 
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
 app.use('/api/items', itemRoutes);
 app.use('/api/groups', groupRoutes);
-app.use('/api/external', externalRoutes);
-
 
 app.get('/', (req, res) => {
   res.send('Anti Food Waste App API is running!');
