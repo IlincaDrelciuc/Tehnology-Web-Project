@@ -3,19 +3,30 @@ Anti Food Waste App
 This is a web application that helps reduce food waste by allowing users
 to track food items in their fridge and share surplus food with others.
 
-Features
-- User registration and login
-- Add food items with expiry dates
-- Mark items as shareable
-- View food shared by other users
-- Claim shared food
-- Expiry warnings for items expiring soon
 
-Technologies
-- Backend: Node.js, Express
-- Database: SQLite with Sequelize ORM
+Users can:
+- track food items and expiration dates
+- receive notifications for expiring products
+- mark items as shareable
+- create groups of friends
+- invite friends based on food preferences
+- claim available food from other users
+
+Features
+- User authentication (login)
+- Add, edit, delete food items
+- Organize items by category
+- Expiry date warnings
+- Share food publicly or within groups
+- Claim food from other users
+- Create groups and invite friends
+- Simple and responsive UI
+
+Technologies Used
+- Backend: Node.js, Express, Sequelize, SQLite
 - Frontend: React
 - Authentication: JWT
+- Database: SQLite
 
 How to run
 
