@@ -60,6 +60,11 @@ const styles = {
   btnGhost: {
     background: '#fff'
   },
+  btnDark: {
+    border: '1px solid #111',
+    background: '#111',
+    color: '#fff'
+  },
   btnSmall: {
     padding: '8px 10px',
     borderRadius: 12,
@@ -236,13 +241,16 @@ function App() {
 
   const [groupsOwned, setGroupsOwned] = useState([]);
   const [groupsMemberOf, setGroupsMemberOf] = useState([]);
-
   const [invites, setInvites] = useState([]);
 
   const [groupName, setGroupName] = useState('');
   const [inviteGroupId, setInviteGroupId] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePreference, setInvitePreference] = useState('');
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 980 : false;
 
@@ -277,6 +285,69 @@ function App() {
     return `⚠️ You have ${soon} item(s) expiring soon.`;
   }
 
+  async function loadItems(tkn = token) {
+    const response = await fetch('/api/items', {
+      headers: { Authorization: `Bearer ${tkn}` }
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setItems(data);
+      const summary = computeNotificationSummary(data);
+      setMessage(summary ? `My items loaded. ${summary}` : 'My items loaded.');
+    } else {
+      const msg = data.message || data.error || 'Could not load items';
+      setMessage(msg);
+      if (msg.includes('Invalid or expired token')) logout();
+    }
+  }
+
+  async function loadShareableItems(tkn = token) {
+    const response = await fetch('/api/items/shareable', {
+      headers: { Authorization: `Bearer ${tkn}` }
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setShareableItems(data);
+    } else {
+      const msg = data.message || data.error || 'Could not load shareable items';
+      setMessage(msg);
+      if (msg.includes('Invalid or expired token')) logout();
+    }
+  }
+
+  async function loadGroups(tkn = token) {
+    const response = await fetch('/api/groups', {
+      headers: { Authorization: `Bearer ${tkn}` }
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setGroupsOwned(Array.isArray(data.owned) ? data.owned : []);
+      setGroupsMemberOf(Array.isArray(data.memberOf) ? data.memberOf : []);
+    } else {
+      setMessage(data.error || data.message || 'Could not load groups');
+    }
+  }
+
+  async function loadInvites(tkn = token) {
+    const response = await fetch('/api/groups/invites', {
+      headers: { Authorization: `Bearer ${tkn}` }
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setInvites(Array.isArray(data) ? data : []);
+    } else {
+      setMessage(data.error || data.message || 'Could not load invites');
+    }
+  }
+
   async function handleLogin() {
     setMessage('');
 
@@ -291,138 +362,31 @@ function App() {
     if (response.ok) {
       localStorage.setItem('token', data.token);
       setToken(data.token);
-      setMessage('');
+      setMessage('Logged in.');
+      await loadItems(data.token);
+      await loadShareableItems(data.token);
+      await loadGroups(data.token);
+      await loadInvites(data.token);
     } else {
       setMessage(data.error || 'Login failed');
     }
   }
 
-  async function loadItems() {
+  async function handleRegister() {
     setMessage('');
 
-    const response = await fetch('/api/items', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    const data = await response.json();
-
-    if (response.ok) {
-      setItems(data);
-      const summary = computeNotificationSummary(data);
-      setMessage(summary ? `My items loaded. ${summary}` : 'My items loaded.');
-    } else {
-      const msg = data.message || data.error || 'Could not load items';
-      setMessage(msg);
-
-      if (msg.includes('Invalid or expired token')) {
-        localStorage.removeItem('token');
-        setToken('');
-        setItems([]);
-        setShareableItems([]);
-        setGroupsOwned([]);
-        setGroupsMemberOf([]);
-        setInvites([]);
-      }
-    }
-  }
-
-  async function loadShareableItems() {
-    setMessage('');
-
-    const response = await fetch('/api/items/shareable', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    const data = await response.json();
-
-    if (response.ok) {
-      setShareableItems(data);
-      setMessage('Shareable items loaded.');
-    } else {
-      const msg = data.message || data.error || 'Could not load shareable items';
-      setMessage(msg);
-
-      if (msg.includes('Invalid or expired token')) {
-        localStorage.removeItem('token');
-        setToken('');
-        setItems([]);
-        setShareableItems([]);
-        setGroupsOwned([]);
-        setGroupsMemberOf([]);
-        setInvites([]);
-      }
-    }
-  }
-
-  async function loadGroups() {
-    setMessage('');
-
-    const response = await fetch('/api/groups', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    const data = await response.json();
-
-    if (response.ok) {
-      setGroupsOwned(Array.isArray(data.owned) ? data.owned : []);
-      setGroupsMemberOf(Array.isArray(data.memberOf) ? data.memberOf : []);
-      setMessage('Groups loaded.');
-    } else {
-      setMessage(data.error || data.message || 'Could not load groups');
-    }
-  }
-
-  async function loadInvites() {
-    setMessage('');
-
-    const response = await fetch('/api/groups/invites', {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    const data = await response.json();
-
-    if (response.ok) {
-      setInvites(Array.isArray(data) ? data : []);
-      setMessage('Invites loaded.');
-    } else {
-      setMessage(data.error || data.message || 'Could not load invites');
-    }
-  }
-
-  async function acceptInvite(inviteId) {
-    setMessage('');
-
-    const response = await fetch(`/api/groups/invites/${inviteId}/accept`, {
+    const response = await fetch('/api/auth/register', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
     });
 
     const data = await response.json();
 
     if (response.ok) {
-      setMessage('Invite accepted.');
-      await loadInvites();
-      await loadGroups();
+      setMessage('Registered! Now click Login.');
     } else {
-      setMessage(data.error || data.message || 'Could not accept invite');
-    }
-  }
-
-  async function declineInvite(inviteId) {
-    setMessage('');
-
-    const response = await fetch(`/api/groups/invites/${inviteId}/decline`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    const data = await response.json();
-
-    if (response.ok) {
-      setMessage('Invite declined.');
-      await loadInvites();
-    } else {
-      setMessage(data.error || data.message || 'Could not decline invite');
+      setMessage(data.error || 'Register failed');
     }
   }
 
@@ -490,6 +454,82 @@ function App() {
     }
   }
 
+  async function acceptInvite(inviteId) {
+    setMessage('');
+
+    const response = await fetch(`/api/groups/invites/${inviteId}/accept`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setMessage('Invite accepted.');
+      await loadInvites();
+      await loadGroups();
+    } else {
+      setMessage(data.error || data.message || 'Could not accept invite');
+    }
+  }
+
+  async function declineInvite(inviteId) {
+    setMessage('');
+
+    const response = await fetch(`/api/groups/invites/${inviteId}/decline`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setMessage('Invite declined.');
+      await loadInvites();
+    } else {
+      setMessage(data.error || data.message || 'Could not decline invite');
+    }
+  }
+
+  async function searchOpenFoodFacts() {
+    setMessage('');
+
+    const q = searchQuery.trim();
+    if (!q) {
+      setMessage('Type something to search (example: milk).');
+      return;
+    }
+
+    setSearchLoading(true);
+    setSearchResults([]);
+
+    try {
+      const response = await fetch(`/api/external/openfoodfacts/search?q=${encodeURIComponent(q)}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        setMessage(data.error || 'Search failed');
+        return;
+      }
+
+      setSearchResults(Array.isArray(data) ? data : []);
+      setMessage(`Found ${Array.isArray(data) ? data.length : 0} result(s). Click one to autofill.`);
+    } catch (e) {
+      setMessage('Could not contact external API. Is backend running?');
+    } finally {
+      setSearchLoading(false);
+    }
+  }
+
+  function applySearchResult(p) {
+    setNewName(p.name || '');
+    if (p.categories) {
+      const first = p.categories.split(',')[0].trim();
+      setNewCategory(first);
+    }
+    setMessage('Autofilled from OpenFoodFacts. Now choose expiry date and add item.');
+  }
+
   async function addItem() {
     setMessage('');
 
@@ -499,15 +539,12 @@ function App() {
     }
 
     let shared_group_id = null;
-
-    if (newShareable) {
-      if (shareTarget === 'group') {
-        if (!selectedGroupId) {
-          setMessage('Please choose a group for sharing.');
-          return;
-        }
-        shared_group_id = Number(selectedGroupId);
+    if (newShareable && shareTarget === 'group') {
+      if (!selectedGroupId) {
+        setMessage('Please choose a group for sharing.');
+        return;
       }
+      shared_group_id = Number(selectedGroupId);
     }
 
     const response = await fetch('/api/items', {
@@ -536,6 +573,7 @@ function App() {
       setShareTarget('public');
       setSelectedGroupId('');
       await loadItems();
+      await loadShareableItems();
     } else {
       setMessage(data.message || data.error || 'Could not add item');
     }
@@ -610,7 +648,9 @@ function App() {
   }, [token]);
 
   const addRowStyle = isNarrow ? { ...styles.grid3, gridTemplateColumns: '1fr' } : styles.grid3;
-  const shareRowStyle = isNarrow ? { ...styles.grid3, gridTemplateColumns: '1fr' } : { ...styles.grid3, gridTemplateColumns: '1fr 1fr 1fr' };
+  const shareRowStyle = isNarrow
+    ? { ...styles.grid3, gridTemplateColumns: '1fr' }
+    : { ...styles.grid3, gridTemplateColumns: '1fr 1fr 1fr' };
   const groupsGridStyle = isNarrow ? { ...styles.grid2Inner, gridTemplateColumns: '1fr' } : styles.grid2Inner;
   const mainGridStyle = isNarrow ? { ...styles.grid2, gridTemplateColumns: '1fr' } : styles.grid2;
 
@@ -621,8 +661,8 @@ function App() {
           <div style={{ ...styles.card, ...styles.authCard }}>
             <div style={styles.authHeader}>
               <div style={styles.logoDot}>AF</div>
-              <div style={styles.authTitle}>Welcome back</div>
-              <div style={styles.authSub}>Log in to manage your fridge and share food.</div>
+              <div style={styles.authTitle}>Welcome</div>
+              <div style={styles.authSub}>Login or create an account to use the app.</div>
             </div>
 
             <div style={styles.authGrid}>
@@ -647,9 +687,15 @@ function App() {
                 />
               </div>
 
-              <button onClick={handleLogin} style={styles.fullBtn}>
-                Login
-              </button>
+              <div style={{ display: 'grid', gap: 10 }}>
+                <button onClick={handleLogin} style={styles.fullBtn}>
+                  Login
+                </button>
+
+                <button onClick={handleRegister} style={{ ...styles.fullBtn, ...styles.btnDark }}>
+                  Register
+                </button>
+              </div>
 
               {message ? <div style={styles.message}>{message}</div> : null}
             </div>
@@ -673,16 +719,16 @@ function App() {
         </div>
 
         <div style={styles.topActions}>
-          <button onClick={loadItems} style={{ ...styles.btn, ...styles.btnPrimary }}>
+          <button onClick={() => loadItems()} style={{ ...styles.btn, ...styles.btnPrimary }}>
             Load my items
           </button>
-          <button onClick={loadShareableItems} style={{ ...styles.btn, ...styles.btnGhost }}>
+          <button onClick={() => loadShareableItems()} style={{ ...styles.btn, ...styles.btnGhost }}>
             Load shareable items
           </button>
-          <button onClick={loadGroups} style={{ ...styles.btn, ...styles.btnGhost }}>
+          <button onClick={() => loadGroups()} style={{ ...styles.btn, ...styles.btnGhost }}>
             Load groups
           </button>
-          <button onClick={loadInvites} style={{ ...styles.btn, ...styles.btnGhost }}>
+          <button onClick={() => loadInvites()} style={{ ...styles.btn, ...styles.btnGhost }}>
             Load invites
           </button>
         </div>
@@ -691,6 +737,58 @@ function App() {
 
         <div style={{ ...styles.card, marginTop: 14 }}>
           <h2 style={{ marginTop: 0, marginBottom: 12 }}>Add item</h2>
+
+          <div style={{ ...styles.card, boxShadow: 'none', marginBottom: 12 }}>
+            <h3 style={{ marginTop: 0, marginBottom: 10 }}>Search product (External API)</h3>
+
+            <div
+              style={
+                isNarrow
+                  ? { display: 'grid', gap: 10 }
+                  : { display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'center' }
+              }
+            >
+              <input
+                style={styles.input}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search: milk, yogurt, bread..."
+              />
+              <button
+                onClick={searchOpenFoodFacts}
+                style={{ ...styles.btn, ...styles.btnPrimary, width: isNarrow ? '100%' : 'auto' }}
+                disabled={searchLoading}
+              >
+                {searchLoading ? 'Searching...' : 'Search'}
+              </button>
+            </div>
+
+            {searchResults.length > 0 ? (
+              <ul style={{ ...styles.list, marginTop: 10 }}>
+                {searchResults.map((p) => (
+                  <li key={p.code || p.name} style={styles.listItem}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {p.image ? (
+                        <img
+                          src={p.image}
+                          alt=""
+                          style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover' }}
+                        />
+                      ) : null}
+                      <div style={{ flex: '1 1 auto' }}>
+                        <b>{p.name}</b>
+                        {p.brand ? <span style={{ color: '#666' }}> — {p.brand}</span> : null}
+                        {p.categories ? <div style={{ color: '#666', fontSize: 12 }}>{p.categories}</div> : null}
+                      </div>
+                      <button onClick={() => applySearchResult(p)} style={{ ...styles.btnSmall, ...styles.btnPrimary }}>
+                        Use
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
 
           <div style={addRowStyle}>
             <div>
@@ -782,43 +880,42 @@ function App() {
         <div style={{ ...styles.card, marginTop: 16 }}>
           <h2 style={{ marginTop: 0, marginBottom: 12 }}>Friends & Groups</h2>
 
-          {invites.length > 0 ? (
-            <>
-              <h3 style={{ marginTop: 0, marginBottom: 10 }}>My invites</h3>
-              <ul style={styles.list}>
-                {invites.map((inv) => (
-                  <li key={inv.id} style={styles.listItem}>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <div style={{ flex: '1 1 auto' }}>
-                        <b>Invite</b> — preference: {inv.preference_label || 'none'}
-                      </div>
-                      <button
-                        onClick={() => acceptInvite(inv.id)}
-                        style={{ ...styles.btnSmall, ...styles.btnPrimary }}
-                      >
-                        Accept
-                      </button>
-                      <button
-                        onClick={() => declineInvite(inv.id)}
-                        style={{ ...styles.btnSmall, ...styles.btnGhost }}
-                      >
-                        Decline
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              <div style={styles.divider} />
-            </>
-          ) : (
-            <>
-              <h3 style={{ marginTop: 0, marginBottom: 10 }}>My invites</h3>
-              <p style={{ color: '#555', marginTop: 0 }}>No pending invites.</p>
-              <div style={styles.divider} />
-            </>
-          )}
-
           <div style={groupsGridStyle}>
+            <div style={{ ...styles.card, boxShadow: 'none' }}>
+              <h3 style={{ marginTop: 0, marginBottom: 10 }}>My invites</h3>
+
+              {invites.length === 0 ? (
+                <p style={{ color: '#555', marginTop: 0, marginBottom: 0 }}>No pending invites.</p>
+              ) : (
+                <ul style={styles.list}>
+                  {invites.map((inv) => (
+                    <li key={inv.id} style={styles.listItem}>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ flex: '1 1 auto' }}>
+                          <b>Invite to group:</b> {inv.group?.name || inv.group_name || 'Group'}{' '}
+                          <span style={{ color: '#666' }}>
+                            {inv.preference_label ? `— pref: ${inv.preference_label}` : ''}
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => acceptInvite(inv.id)}
+                          style={{ ...styles.btnSmall, ...styles.btnPrimary }}
+                        >
+                          Accept
+                        </button>
+                        <button
+                          onClick={() => declineInvite(inv.id)}
+                          style={{ ...styles.btnSmall, ...styles.btnGhost }}
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             <div style={{ ...styles.card, boxShadow: 'none' }}>
               <h3 style={{ marginTop: 0, marginBottom: 10 }}>Create group</h3>
               <label style={styles.label}>Group name</label>
@@ -834,7 +931,11 @@ function App() {
                 </button>
               </div>
             </div>
+          </div>
 
+          <div style={styles.divider} />
+
+          <div style={groupsGridStyle}>
             <div style={{ ...styles.card, boxShadow: 'none' }}>
               <h3 style={{ marginTop: 0, marginBottom: 10 }}>Invite friend</h3>
 
@@ -878,39 +979,41 @@ function App() {
                 </button>
               </div>
             </div>
-          </div>
 
-          <div style={styles.divider} />
+            <div style={{ ...styles.card, boxShadow: 'none' }}>
+              <h3 style={{ marginTop: 0, marginBottom: 8 }}>Groups overview</h3>
 
-          <div style={groupsGridStyle}>
-            <div>
-              <h3 style={{ marginTop: 0, marginBottom: 8 }}>Groups I own</h3>
-              {groupsOwned.length === 0 ? (
-                <p style={{ color: '#555', margin: 0 }}>No groups yet.</p>
-              ) : (
-                <ul style={styles.list}>
-                  {groupsOwned.map((g) => (
-                    <li key={g.id} style={styles.listItem}>
-                      <b>{g.name}</b> (id: {g.id})
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+              <div style={styles.grid2Inner}>
+                <div>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Groups I own</div>
+                  {groupsOwned.length === 0 ? (
+                    <p style={{ color: '#555', margin: 0 }}>No groups yet.</p>
+                  ) : (
+                    <ul style={styles.list}>
+                      {groupsOwned.map((g) => (
+                        <li key={g.id} style={styles.listItem}>
+                          <b>{g.name}</b> (id: {g.id})
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
 
-            <div>
-              <h3 style={{ marginTop: 0, marginBottom: 8 }}>Groups I’m in</h3>
-              {groupsMemberOf.length === 0 ? (
-                <p style={{ color: '#555', margin: 0 }}>You are not in any group.</p>
-              ) : (
-                <ul style={styles.list}>
-                  {groupsMemberOf.map((g) => (
-                    <li key={g.id} style={styles.listItem}>
-                      <b>{g.name}</b>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                <div>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Groups I’m in</div>
+                  {groupsMemberOf.length === 0 ? (
+                    <p style={{ color: '#555', margin: 0 }}>You are not in any group.</p>
+                  ) : (
+                    <ul style={styles.list}>
+                      {groupsMemberOf.map((g) => (
+                        <li key={g.id} style={styles.listItem}>
+                          <b>{g.name}</b>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
