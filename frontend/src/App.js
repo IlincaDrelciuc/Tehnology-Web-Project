@@ -151,6 +151,20 @@ function App() {
     setMessage('Logged out');
   }
 
+  function getExpiryStatus(expiryDateStr) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const expiry = new Date(expiryDateStr);
+    expiry.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) return { label: 'EXPIRED', color: 'crimson' };
+    if (diffDays <= 2) return { label: 'EXPIRING SOON', color: 'darkorange' };
+    return null;
+  }
+
   return (
     <div style={{ padding: 30, fontFamily: 'Arial' }}>
       <h1>Anti Food Waste App</h1>
@@ -246,12 +260,27 @@ function App() {
             <p>No items yet. Add one above, then click “Load my items”.</p>
           ) : (
             <ul>
-              {items.map((item) => (
-                <li key={item.id}>
-                  <b>{item.name}</b> — expires {item.expiry_date} — shareable:{' '}
-                  {String(item.is_shareable)}
-                </li>
-              ))}
+              {items.map((item) => {
+                const status = getExpiryStatus(item.expiry_date);
+
+                return (
+                  <li key={item.id}>
+                    <b>{item.name}</b> — expires {item.expiry_date} — shareable:{' '}
+                    {String(item.is_shareable)}
+                    {status ? (
+                      <span
+                        style={{
+                          marginLeft: 10,
+                          fontWeight: 'bold',
+                          color: status.color
+                        }}
+                      >
+                        ⚠️ {status.label}
+                      </span>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           )}
 
