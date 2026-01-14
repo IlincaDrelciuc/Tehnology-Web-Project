@@ -11,6 +11,7 @@ const Item = sequelize.define(
     quantity: { type: DataTypes.STRING, allowNull: true },
     expiry_date: { type: DataTypes.DATEONLY, allowNull: false },
     is_shareable: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    shared_group_id: { type: DataTypes.INTEGER, allowNull: true, defaultValue: null },
     claimed_by: { type: DataTypes.INTEGER, allowNull: true, defaultValue: null },
     claimed_at: { type: DataTypes.DATE, allowNull: true, defaultValue: null }
   },

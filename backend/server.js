@@ -6,11 +6,13 @@ const { sequelize } = require('./models');
 
 const authRoutes = require('./routes/auth');
 const itemRoutes = require('./routes/items');
+const groupRoutes = require('./routes/groups');
 
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
 app.use('/api/items', itemRoutes);
+app.use('/api/groups', groupRoutes);
 
 app.get('/', (req, res) => {
   res.send('Anti Food Waste App API is running!');
@@ -19,7 +21,7 @@ app.get('/', (req, res) => {
 const PORT = process.env.PORT || 3000;
 
 sequelize
-  .sync({ alter: true })
+  .sync()
   .then(() => {
     console.log('Database synced (Sequelize).');
     app.listen(PORT, () => {
