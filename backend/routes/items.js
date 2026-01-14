@@ -9,13 +9,17 @@ router.use(authenticateToken);
 
 router.get('/shareable', async (req, res) => {
   try {
+    const user_id = req.user.userId;
+
     const items = await Item.findAll({
       where: {
         is_shareable: true,
-        claimed_by: null
+        claimed_by: null,
+        user_id: { [Op.ne]: user_id }
       },
       order: [['expiry_date', 'ASC']]
     });
+
     res.json(items);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -123,24 +127,17 @@ router.post('/:id/claim', async (req, res) => {
   try {
     const item = await Item.findByPk(item_id);
 
-    if (!item) {
-      return res.status(404).json({ error: 'Item not found.' });
-    }
+    if (!item) return res.status(404).json({ error: 'Item not found.' });
 
-    if (!item.is_shareable) {
-      return res.status(400).json({ error: 'Item is not shareable.' });
-    }
+    if (!item.is_shareable) return res.status(400).json({ error: 'Item is not shareable.' });
 
-    if (item.claimed_by) {
-      return res.status(409).json({ error: 'Item already claimed.' });
-    }
+    if (item.claimed_by) return res.status(409).json({ error: 'Item already claimed.' });
 
-    if (item.user_id === user_id) {
-      return res.status(400).json({ error: 'You cannot claim your own item.' });
-    }
+    if (item.user_id === user_id) return res.status(400).json({ error: 'You cannot claim your own item.' });
 
     item.claimed_by = user_id;
     item.claimed_at = new Date();
+    item.is_shareable = false;
     await item.save();
 
     res.json({ message: 'Item claimed successfully.' });

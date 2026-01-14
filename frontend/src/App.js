@@ -53,35 +53,61 @@ function App() {
         localStorage.removeItem('token');
         setToken('');
         setItems([]);
+        setShareableItems([]);
       }
     }
   }
 
   async function loadShareableItems() {
-  setMessage('');
+    setMessage('');
 
-  const response = await fetch('/api/items/shareable', {
-    headers: { Authorization: `Bearer ${token}` }
-  });
+    const response = await fetch('/api/items/shareable', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
 
-  const data = await response.json();
+    const data = await response.json();
 
-  if (response.ok) {
-    setShareableItems(data);
-    setMessage('Shareable items loaded!');
-  } else {
-    const msg = data.message || data.error || 'Could not load shareable items';
-    setMessage(msg);
+    if (response.ok) {
+      setShareableItems(data);
+      setMessage('Shareable items loaded!');
+    } else {
+      const msg = data.message || data.error || 'Could not load shareable items';
+      setMessage(msg);
 
-    if (msg.includes('Invalid or expired token')) {
-      localStorage.removeItem('token');
-      setToken('');
-      setItems([]);
-      setShareableItems([]);
+      if (msg.includes('Invalid or expired token')) {
+        localStorage.removeItem('token');
+        setToken('');
+        setItems([]);
+        setShareableItems([]);
+      }
     }
   }
-}
 
+  async function claimItem(itemId) {
+    setMessage('');
+
+    const response = await fetch(`/api/items/${itemId}/claim`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      setMessage('Item claimed!');
+      await loadShareableItems();
+    } else {
+      const msg = data.error || data.message || 'Could not claim item';
+      setMessage(msg);
+
+      if (msg.includes('Invalid or expired token')) {
+        localStorage.removeItem('token');
+        setToken('');
+        setItems([]);
+        setShareableItems([]);
+      }
+    }
+  }
 
   async function addItem() {
     setMessage('');
@@ -121,6 +147,7 @@ function App() {
     localStorage.removeItem('token');
     setToken('');
     setItems([]);
+    setShareableItems([]);
     setMessage('Logged out');
   }
 
@@ -131,18 +158,35 @@ function App() {
       {!token ? (
         <div style={{ maxWidth: 320 }}>
           <div>
-            <label>Email</label><br />
-            <input value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: '100%' }} />
+            <label>Email</label>
+            <br />
+            <input
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              style={{ width: '100%' }}
+            />
           </div>
 
           <div style={{ marginTop: 10 }}>
-            <label>Password</label><br />
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} style={{ width: '100%' }} />
+            <label>Password</label>
+            <br />
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={{ width: '100%' }}
+            />
           </div>
 
-          <button onClick={handleLogin} style={{ marginTop: 15 }}>Login</button>
+          <button onClick={handleLogin} style={{ marginTop: 15 }}>
+            Login
+          </button>
 
-          {message && <p><b>{message}</b></p>}
+          {message && (
+            <p>
+              <b>{message}</b>
+            </p>
+          )}
         </div>
       ) : (
         <div>
@@ -150,21 +194,34 @@ function App() {
             <button onClick={loadItems}>Load my items</button>{' '}
             <button onClick={loadShareableItems}>Load shareable items</button>{' '}
             <button onClick={logout}>Logout</button>
-
           </div>
 
-          {message && <p><b>{message}</b></p>}
+          {message && (
+            <p>
+              <b>{message}</b>
+            </p>
+          )}
 
           <h2>Add item</h2>
           <div style={{ maxWidth: 420 }}>
             <div>
-              <label>Name</label><br />
-              <input value={newName} onChange={(e) => setNewName(e.target.value)} style={{ width: '100%' }} />
+              <label>Name</label>
+              <br />
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                style={{ width: '100%' }}
+              />
             </div>
 
             <div style={{ marginTop: 10 }}>
-              <label>Expiry date</label><br />
-              <input type="date" value={newExpiry} onChange={(e) => setNewExpiry(e.target.value)} />
+              <label>Expiry date</label>
+              <br />
+              <input
+                type="date"
+                value={newExpiry}
+                onChange={(e) => setNewExpiry(e.target.value)}
+              />
             </div>
 
             <div style={{ marginTop: 10 }}>
@@ -178,7 +235,9 @@ function App() {
               </label>
             </div>
 
-            <button onClick={addItem} style={{ marginTop: 10 }}>Add</button>
+            <button onClick={addItem} style={{ marginTop: 10 }}>
+              Add
+            </button>
           </div>
 
           <h2 style={{ marginTop: 25 }}>My items</h2>
@@ -189,7 +248,8 @@ function App() {
             <ul>
               {items.map((item) => (
                 <li key={item.id}>
-                  <b>{item.name}</b> — expires {item.expiry_date} — shareable: {String(item.is_shareable)}
+                  <b>{item.name}</b> — expires {item.expiry_date} — shareable:{' '}
+                  {String(item.is_shareable)}
                 </li>
               ))}
             </ul>
@@ -197,18 +257,18 @@ function App() {
 
           <h2 style={{ marginTop: 25 }}>Available to claim</h2>
 
-{shareableItems.length === 0 ? (
-  <p>No shareable items from other users right now.</p>
-) : (
-  <ul>
-    {shareableItems.map((item) => (
-      <li key={item.id}>
-        <b>{item.name}</b> — expires {item.expiry_date}
-      </li>
-    ))}
-  </ul>
-)}
-
+          {shareableItems.length === 0 ? (
+            <p>No shareable items from other users right now.</p>
+          ) : (
+            <ul>
+              {shareableItems.map((item) => (
+                <li key={item.id}>
+                  <b>{item.name}</b> — expires {item.expiry_date}{' '}
+                  <button onClick={() => claimItem(item.id)}>Claim</button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>
