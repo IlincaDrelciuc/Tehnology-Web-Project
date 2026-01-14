@@ -135,10 +135,12 @@ router.post('/:id/claim', async (req, res) => {
 
     if (item.user_id === user_id) return res.status(400).json({ error: 'You cannot claim your own item.' });
 
+    item.user_id = user_id;
+    item.is_shareable = false;
     item.claimed_by = user_id;
     item.claimed_at = new Date();
-    item.is_shareable = false;
     await item.save();
+
 
     res.json({ message: 'Item claimed successfully.' });
   } catch (err) {
