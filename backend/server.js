@@ -2,8 +2,6 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 
-const app = express();
-
 const { sequelize } = require('./models');
 
 const authRoutes = require('./routes/auth');
@@ -11,12 +9,17 @@ const itemRoutes = require('./routes/items');
 const groupRoutes = require('./routes/groups');
 const externalRoutes = require('./routes/external');
 
-const FRONTEND_URL = process.env.FRONTEND_URL;
+const app = express();
 
+/**
+ * Enable CORS so the deployed React frontend can call this API.
+ * In production we allow the exact frontend domain (RENDER_FRONTEND_URL).
+ */
+const allowedOrigin = process.env.RENDER_FRONTEND_URL || '*';
 app.use(
   cors({
-    origin: FRONTEND_URL || true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    origin: allowedOrigin,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization']
   })
 );
@@ -40,7 +43,6 @@ sequelize
     console.log('Database synced (Sequelize).');
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
-      console.log(`Open http://localhost:${PORT} in your browser to check the status.`);
     });
   })
   .catch((err) => {
