@@ -7,6 +7,7 @@
 
 const express = require('express');
 const app = express();
+const cors = require('cors');
 
 // Load environment variables from .env file
 require('dotenv').config();
@@ -21,6 +22,11 @@ const groupRoutes = require('./routes/groups');
 
 // Middleware to parse JSON bodies from HTTP requests
 app.use(express.json());
+
+
+app.use(cors({
+  origin: '*'
+}));
 
 // Register API routes
 app.use('/api/auth', authRoutes);     // Authentication routes (login, register)
