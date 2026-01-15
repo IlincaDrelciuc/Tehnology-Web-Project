@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 const API_BASE = (process.env.REACT_APP_API_URL || '').trim().replace(/\/$/, '');
 
 /**
- * Small helper to build API URLs safely.
+ * Helper: build API URLs safely.
  * - If API_BASE exists -> use it (production)
  * - If not -> use relative URLs (local dev / proxy)
  */
@@ -24,17 +24,17 @@ function apiUrl(path) {
  * Safe fetch helper:
  * - Adds Authorization header when token exists
  * - Parses JSON if possible
- * - If server returns HTML/text, we keep it in "raw" so we can debug
+ * - If server returns HTML/text, keep it in "raw" for debugging
  */
 async function apiFetch(path, options = {}, token = '') {
   const headers = { ...(options.headers || {}) };
 
-  // If we send JSON body, ensure Content-Type is set
+  // Student note: if we send JSON, Content-Type must be application/json
   if (options.body && !headers['Content-Type']) {
     headers['Content-Type'] = 'application/json';
   }
 
-  // Attach JWT token if provided
+  // Student note: JWT token is sent in Authorization header
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
@@ -42,7 +42,6 @@ async function apiFetch(path, options = {}, token = '') {
   const url = apiUrl(path);
   const res = await fetch(url, { ...options, headers });
 
-  // Read as text first (prevents JSON.parse crashes)
   const text = await res.text();
 
   let data = {};
@@ -123,7 +122,8 @@ function App() {
   const [password, setPassword] = useState('');
 
   const [message, setMessage] = useState('');
-  const [debug, setDebug] = useState(''); // student-style: show last request debug
+  const [debug, setDebug] = useState('');
+
   const [items, setItems] = useState([]);
   const [shareableItems, setShareableItems] = useState([]);
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -131,6 +131,7 @@ function App() {
   const [newName, setNewName] = useState('');
   const [newExpiry, setNewExpiry] = useState('');
   const [newCategory, setNewCategory] = useState('');
+
   const [newShareable, setNewShareable] = useState(false);
   const [shareTarget, setShareTarget] = useState('public');
   const [selectedGroupId, setSelectedGroupId] = useState('');
@@ -150,7 +151,18 @@ function App() {
 
   const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 980 : false;
 
-  // Helper: expiry warning
+  function logout() {
+    localStorage.removeItem('token');
+    setToken('');
+    setItems([]);
+    setShareableItems([]);
+    setGroupsOwned([]);
+    setGroupsMemberOf([]);
+    setInvites([]);
+    setMessage('');
+    setDebug('');
+  }
+
   function getExpiryStatus(expiryDateStr) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -180,19 +192,6 @@ function App() {
     if (expired > 0 && soon > 0) return `⚠️ You have ${expired} expired item(s) and ${soon} expiring soon.`;
     if (expired > 0) return `⚠️ You have ${expired} expired item(s).`;
     return `⚠️ You have ${soon} item(s) expiring soon.`;
-  }
-
-  // Logout clears everything
-  function logout() {
-    localStorage.removeItem('token');
-    setToken('');
-    setItems([]);
-    setShareableItems([]);
-    setGroupsOwned([]);
-    setGroupsMemberOf([]);
-    setInvites([]);
-    setMessage('');
-    setDebug('');
   }
 
   async function loadItems(tkn = token) {
@@ -247,17 +246,13 @@ function App() {
     }
   }
 
-  // Register: creates user
   async function handleRegister() {
     setMessage('');
     setDebug('');
 
-    const cleanEmail = email.trim();
-    const cleanPassword = password;
-
     const r = await apiFetch(
       '/api/auth/register',
-      { method: 'POST', body: JSON.stringify({ email: cleanEmail, password: cleanPassword }) },
+      { method: 'POST', body: JSON.stringify({ email: email.trim(), password }) },
       ''
     );
 
@@ -266,22 +261,17 @@ function App() {
     if (r.ok) {
       setMessage('Registered! Now click Login.');
     } else {
-      const msg = r.data.error || r.data.message || r.data.raw || 'Register failed';
-      setMessage(String(msg));
+      setMessage(String(r.data.error || r.data.message || r.data.raw || 'Register failed'));
     }
   }
 
-  // Login: should return token
   async function handleLogin() {
     setMessage('');
     setDebug('');
 
-    const cleanEmail = email.trim();
-    const cleanPassword = password;
-
     const r = await apiFetch(
       '/api/auth/login',
-      { method: 'POST', body: JSON.stringify({ email: cleanEmail, password: cleanPassword }) },
+      { method: 'POST', body: JSON.stringify({ email: email.trim(), password }) },
       ''
     );
 
@@ -297,7 +287,6 @@ function App() {
       await loadGroups(r.data.token);
       await loadInvites(r.data.token);
     } else {
-      // IMPORTANT: show the REAL server reason
       const msg = r.data.error || r.data.message || r.data.raw || 'Login failed';
       setMessage(`Login failed (status ${r.status}): ${msg}`);
     }
@@ -309,12 +298,7 @@ function App() {
 
     if (!groupName.trim()) return setMessage('Please enter a group name.');
 
-    const r = await apiFetch(
-      '/api/groups',
-      { method: 'POST', body: JSON.stringify({ name: groupName.trim() }) },
-      token
-    );
-
+    const r = await apiFetch('/api/groups', { method: 'POST', body: JSON.stringify({ name: groupName.trim() }) }, token);
     setDebug(`POST ${r.url} -> ${r.status}`);
 
     if (r.ok) {
@@ -523,6 +507,7 @@ function App() {
   const groupsGridStyle = isNarrow ? { ...styles.grid2Inner, gridTemplateColumns: '1fr' } : styles.grid2Inner;
   const mainGridStyle = isNarrow ? { ...styles.grid2, gridTemplateColumns: '1fr' } : styles.grid2;
 
+  // LOGIN SCREEN
   if (!token) {
     return (
       <div style={styles.page}>
@@ -564,6 +549,7 @@ function App() {
     );
   }
 
+  // MAIN APP
   return (
     <div style={styles.page}>
       <div style={styles.container}>
@@ -585,9 +571,7 @@ function App() {
         {message ? <div style={styles.message}>{message}</div> : null}
         {debug ? <div style={{ ...styles.message, fontSize: 12, color: '#374151' }}>{debug}</div> : null}
 
-        {/* The rest of your UI is unchanged (items, groups, invites, external search, etc.) */}
-        {/* I kept it identical to your original, only improved networking + debugging. */}
-
+        {/* ADD ITEM */}
         <div style={{ ...styles.card, marginTop: 14 }}>
           <h2 style={{ marginTop: 0, marginBottom: 12 }}>Add item</h2>
 
@@ -674,6 +658,114 @@ function App() {
           </div>
         </div>
 
+        {/* FRIENDS & GROUPS (RESTORED) */}
+        <div style={{ ...styles.card, marginTop: 16 }}>
+          <h2 style={{ marginTop: 0, marginBottom: 12 }}>Friends & Groups</h2>
+
+          <div style={groupsGridStyle}>
+            <div style={{ ...styles.card, boxShadow: 'none' }}>
+              <h3 style={{ marginTop: 0, marginBottom: 10 }}>My invites</h3>
+
+              {invites.length === 0 ? (
+                <p style={{ color: '#555', margin: 0 }}>No pending invites.</p>
+              ) : (
+                <ul style={styles.list}>
+                  {invites.map((inv) => (
+                    <li key={inv.id} style={styles.listItem}>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <div style={{ flex: '1 1 auto' }}>
+                          <b>Invite to group:</b> {inv.group?.name || inv.group_name || 'Group'}
+                          <span style={{ color: '#666' }}>
+                            {inv.preference_label ? ` — pref: ${inv.preference_label}` : ''}
+                          </span>
+                        </div>
+                        <button onClick={() => acceptInvite(inv.id)} style={{ ...styles.btnSmall, ...styles.btnPrimary }}>
+                          Accept
+                        </button>
+                        <button onClick={() => declineInvite(inv.id)} style={{ ...styles.btnSmall, ...styles.btnGhost }}>
+                          Decline
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div style={{ ...styles.card, boxShadow: 'none' }}>
+              <h3 style={{ marginTop: 0, marginBottom: 10 }}>Create group</h3>
+              <label style={styles.label}>Group name</label>
+              <input style={styles.input} value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="e.g. Gym friends" />
+              <div style={{ marginTop: 10 }}>
+                <button onClick={createGroup} style={{ ...styles.btn, ...styles.btnPrimary }}>Create</button>
+              </div>
+            </div>
+          </div>
+
+          <div style={styles.divider} />
+
+          <div style={groupsGridStyle}>
+            <div style={{ ...styles.card, boxShadow: 'none' }}>
+              <h3 style={{ marginTop: 0, marginBottom: 10 }}>Invite friend</h3>
+
+              <label style={styles.label}>Group (you own)</label>
+              <select style={styles.select} value={inviteGroupId} onChange={(e) => setInviteGroupId(e.target.value)}>
+                <option value="">Select group</option>
+                {groupsOwned.map((g) => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))}
+              </select>
+
+              <div style={{ height: 10 }} />
+
+              <label style={styles.label}>Friend email</label>
+              <input style={styles.input} value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} placeholder="friend@test.com" />
+
+              <div style={{ height: 10 }} />
+
+              <label style={styles.label}>Preference label</label>
+              <input style={styles.input} value={invitePreference} onChange={(e) => setInvitePreference(e.target.value)} placeholder="e.g. no meat, lactose-free" />
+
+              <div style={{ marginTop: 10 }}>
+                <button onClick={inviteToGroup} style={{ ...styles.btn, ...styles.btnPrimary }}>Invite</button>
+              </div>
+            </div>
+
+            <div style={{ ...styles.card, boxShadow: 'none' }}>
+              <h3 style={{ marginTop: 0, marginBottom: 8 }}>Groups overview</h3>
+
+              <div style={styles.grid2Inner}>
+                <div>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Groups I own</div>
+                  {groupsOwned.length === 0 ? (
+                    <p style={{ color: '#555', margin: 0 }}>No groups yet.</p>
+                  ) : (
+                    <ul style={styles.list}>
+                      {groupsOwned.map((g) => (
+                        <li key={g.id} style={styles.listItem}><b>{g.name}</b> (id: {g.id})</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>Groups I’m in</div>
+                  {groupsMemberOf.length === 0 ? (
+                    <p style={{ color: '#555', margin: 0 }}>You are not in any group.</p>
+                  ) : (
+                    <ul style={styles.list}>
+                      {groupsMemberOf.map((g) => (
+                        <li key={g.id} style={styles.listItem}><b>{g.name}</b></li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ITEMS + CLAIM */}
         <div style={mainGridStyle}>
           <div style={styles.card}>
             <h2 style={{ ...styles.sectionTitle, marginTop: 0, marginBottom: 12 }}>My items</h2>
