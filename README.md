@@ -39,3 +39,25 @@ Frontend:
 cd frontend
 npm install
 PORT=3001 npm start
+
+Backend
+
+Tech stack
+- Node.js
+- Express
+- Sequelize ORM
+- SQLite
+- JWT authentication
+
+ External API
+- OpenFoodFacts API used to search food products
+
+ Running locally
+(```)bash
+cd backend
+npm install
+npm start
+
+Deployed Backend
+The backend is deployed on Render and available at:
+https://YOUR-RENDER-URL.onrender.com
