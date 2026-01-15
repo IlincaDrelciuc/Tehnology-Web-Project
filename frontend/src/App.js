@@ -1,20 +1,63 @@
 import { useEffect, useMemo, useState } from 'react';
 
-/*
-  Anti Food Waste App (React SPA)
-  -------------------------------------------------
-  This file is the main frontend page for the app.
-  It:
-   - logs in / registers users (JWT auth)
-   - manages fridge items (CRUD)
-   - shows shareable items and allows claiming
-   - manages groups + invites
-   - uses an external API (OpenFoodFacts) via the backend
-*/
+/**
+ * IMPORTANT:
+ * When deployed, the frontend and backend are on different domains.
+ * So we must call the backend using a full URL (REACT_APP_API_URL).
+ * Example: https://my-backend.onrender.com
+ */
+const API_BASE = (process.env.REACT_APP_API_URL || '').replace(/\/$/, '');
 
-// -----------------------------
-// Styling (simple inline styles)
-// -----------------------------
+/**
+ * Small helper to build URLs safely.
+ * If REACT_APP_API_URL exists -> use it.
+ * If not -> use relative URLs (local dev with proxy).
+ */
+function apiUrl(path) {
+  if (!path.startsWith('/')) path = '/' + path;
+  return API_BASE ? `${API_BASE}${path}` : path;
+}
+
+/**
+ * Safe fetch helper:
+ * - adds Authorization token when needed
+ * - tries to parse JSON, but won't crash if response is empty or HTML
+ */
+async function apiFetch(path, options = {}, token = '') {
+  const headers = {
+    ...(options.headers || {})
+  };
+
+  // If we send JSON, make sure Content-Type is set
+  if (options.body && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  // Attach JWT if we have one
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const res = await fetch(apiUrl(path), { ...options, headers });
+
+  // Read text first (so we can handle non-JSON responses safely)
+  const text = await res.text();
+
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      // If backend returns HTML or plain text, we keep it for debugging
+      data = { raw: text };
+    }
+  } else {
+    data = {};
+  }
+
+  return { ok: res.ok, status: res.status, data };
+}
+
 const styles = {
   page: {
     minHeight: '100vh',
@@ -96,7 +139,8 @@ const styles = {
     borderRadius: 12,
     border: '1px solid #e7e7ef',
     background: '#f9fafb',
-    color: '#111'
+    color: '#111',
+    wordBreak: 'break-word'
   },
 
   label: { display: 'block', fontSize: 13, color: '#333', marginBottom: 6 },
@@ -178,22 +222,24 @@ const styles = {
     justifyContent: 'flex-end'
   },
 
-  // Login/Register layout
   authShell: {
     minHeight: 'calc(100vh - 48px)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center'
   },
+
   authCard: {
     width: '100%',
     maxWidth: 420,
     padding: 18
   },
+
   authHeader: {
     textAlign: 'center',
     marginBottom: 14
   },
+
   logoDot: {
     width: 44,
     height: 44,
@@ -206,20 +252,24 @@ const styles = {
     fontWeight: 900,
     boxShadow: '0 10px 30px rgba(59,130,246,0.25)'
   },
+
   authTitle: {
     margin: '10px 0 0',
     fontSize: 22
   },
+
   authSub: {
     margin: '6px 0 0',
     color: '#6b7280',
     fontSize: 13
   },
+
   authGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr',
     gap: 12
   },
+
   fullBtn: {
     width: '100%',
     padding: '12px 14px',
@@ -232,90 +282,38 @@ const styles = {
   }
 };
 
-/*
-  IMPORTANT (DEPLOYMENT FIX)
-  --------------------------
-  Locally: CRA proxy sends "/api" to localhost backend.
-  On deployed frontend: there is NO proxy.
-  So we must call the backend using its FULL URL.
-
-  On Render (Static Site), set an Environment Variable:
-    REACT_APP_API_BASE = https://YOUR-BACKEND.onrender.com
-
-  Then all calls will be:
-    `${API_BASE}/api/...`
-*/
-const API_BASE = (process.env.REACT_APP_API_BASE || '').replace(/\/$/, '');
-
-/*
-  Helper function: parse JSON safely.
-  If backend returns HTML or empty body, JSON.parse would crash.
-  This prevents "JSON.parse unexpected end of data".
-*/
-async function safeJson(res) {
-  const text = await res.text();
-  try {
-    return text ? JSON.parse(text) : {};
-  } catch {
-    return { error: text || 'Non-JSON response from server' };
-  }
-}
-
 function App() {
-  // -------------------------
-  // Auth states (login form)
-  // -------------------------
   const [email, setEmail] = useState('a@test.com');
   const [password, setPassword] = useState('pass123');
-  const [token, setToken] = useState(localStorage.getItem('token') || '');
 
-  // -------------------------
-  // General message / alert
-  // -------------------------
   const [message, setMessage] = useState('');
-
-  // -------------------------
-  // Items and shareable items
-  // -------------------------
   const [items, setItems] = useState([]);
   const [shareableItems, setShareableItems] = useState([]);
+  const [token, setToken] = useState(localStorage.getItem('token') || '');
 
-  // Add item form
   const [newName, setNewName] = useState('');
   const [newExpiry, setNewExpiry] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [newShareable, setNewShareable] = useState(false);
-  const [shareTarget, setShareTarget] = useState('public'); // "public" or "group"
+  const [shareTarget, setShareTarget] = useState('public');
   const [selectedGroupId, setSelectedGroupId] = useState('');
 
-  // -------------------------
-  // Groups and invites
-  // -------------------------
   const [groupsOwned, setGroupsOwned] = useState([]);
   const [groupsMemberOf, setGroupsMemberOf] = useState([]);
   const [invites, setInvites] = useState([]);
 
-  // Create group + invite form
   const [groupName, setGroupName] = useState('');
   const [inviteGroupId, setInviteGroupId] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [invitePreference, setInvitePreference] = useState('');
 
-  // -------------------------
-  // External API search
-  // -------------------------
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  // Simple responsive logic
   const isNarrow = typeof window !== 'undefined' ? window.innerWidth < 980 : false;
 
-  /*
-    Returns a status for items:
-    - EXPIRED if date is in the past
-    - EXPIRING SOON if within 2 days
-  */
+  // Helper: checks expiry date and returns a warning label
   function getExpiryStatus(expiryDateStr) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -330,10 +328,7 @@ function App() {
     return null;
   }
 
-  /*
-    Creates a user-friendly notification summary.
-    Example: "You have 1 expired and 2 expiring soon"
-  */
+  // Helper: small “notification” summary (expired / expiring soon)
   function computeNotificationSummary(currentItems) {
     let expired = 0;
     let soon = 0;
@@ -351,154 +346,105 @@ function App() {
     return `⚠️ You have ${soon} item(s) expiring soon.`;
   }
 
-  // -------------------------
-  // API Calls (Items)
-  // -------------------------
-
-  // Load my items from backend
+  // Loads the user's items
   async function loadItems(tkn = token) {
-    const response = await fetch(`${API_BASE}/api/items`, {
-      headers: { Authorization: `Bearer ${tkn}` }
-    });
+    const { ok, data } = await apiFetch('/api/items', {}, tkn);
 
-    const data = await safeJson(response);
-
-    if (response.ok) {
-      const arr = Array.isArray(data) ? data : [];
-      setItems(arr);
-      const summary = computeNotificationSummary(arr);
+    if (ok) {
+      setItems(Array.isArray(data) ? data : []);
+      const summary = computeNotificationSummary(Array.isArray(data) ? data : []);
       setMessage(summary ? `My items loaded. ${summary}` : 'My items loaded.');
     } else {
-      const msg = data.message || data.error || 'Could not load items';
-      setMessage(msg);
+      const msg = data.message || data.error || data.raw || 'Could not load items';
+      setMessage(String(msg));
       if (String(msg).includes('Invalid or expired token')) logout();
     }
   }
 
-  // Load shareable items (from other users)
+  // Loads items that are shareable for this user (public + groups they belong to)
   async function loadShareableItems(tkn = token) {
-    const response = await fetch(`${API_BASE}/api/items/shareable`, {
-      headers: { Authorization: `Bearer ${tkn}` }
-    });
+    const { ok, data } = await apiFetch('/api/items/shareable', {}, tkn);
 
-    const data = await safeJson(response);
-
-    if (response.ok) {
+    if (ok) {
       setShareableItems(Array.isArray(data) ? data : []);
     } else {
-      const msg = data.message || data.error || 'Could not load shareable items';
-      setMessage(msg);
+      const msg = data.message || data.error || data.raw || 'Could not load shareable items';
+      setMessage(String(msg));
       if (String(msg).includes('Invalid or expired token')) logout();
     }
   }
 
-  // Add an item to my fridge
-  async function addItem() {
-    setMessage('');
-
-    if (!newName || !newExpiry) {
-      setMessage('Please enter name and expiry date.');
-      return;
-    }
-
-    // shared_group_id is only used if shareable + shareTarget is "group"
-    let shared_group_id = null;
-    if (newShareable && shareTarget === 'group') {
-      if (!selectedGroupId) {
-        setMessage('Please choose a group for sharing.');
-        return;
-      }
-      shared_group_id = Number(selectedGroupId);
-    }
-
-    const response = await fetch(`${API_BASE}/api/items`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        name: newName,
-        category: newCategory.trim() || null,
-        expiry_date: newExpiry,
-        is_shareable: newShareable,
-        shared_group_id
-      })
-    });
-
-    const data = await safeJson(response);
-
-    if (response.ok) {
-      setMessage('Item added.');
-      setNewName('');
-      setNewExpiry('');
-      setNewCategory('');
-      setNewShareable(false);
-      setShareTarget('public');
-      setSelectedGroupId('');
-      await loadItems();
-      await loadShareableItems();
-    } else {
-      setMessage(data.message || data.error || 'Could not add item');
-    }
-  }
-
-  // Claim an item (moves it into my list)
-  async function claimItem(itemId) {
-    setMessage('');
-
-    const response = await fetch(`${API_BASE}/api/items/${itemId}/claim`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` }
-    });
-
-    const data = await safeJson(response);
-
-    if (response.ok) {
-      setMessage('Item claimed!');
-      await loadShareableItems();
-      await loadItems();
-    } else {
-      setMessage(data.error || data.message || 'Could not claim item');
-    }
-  }
-
-  // -------------------------
-  // API Calls (Groups/Invites)
-  // -------------------------
-
-  // Load groups I own and groups I am in
+  // Loads group info (groups owned + groups member of)
   async function loadGroups(tkn = token) {
-    const response = await fetch(`${API_BASE}/api/groups`, {
-      headers: { Authorization: `Bearer ${tkn}` }
-    });
+    const { ok, data } = await apiFetch('/api/groups', {}, tkn);
 
-    const data = await safeJson(response);
-
-    if (response.ok) {
+    if (ok) {
       setGroupsOwned(Array.isArray(data.owned) ? data.owned : []);
       setGroupsMemberOf(Array.isArray(data.memberOf) ? data.memberOf : []);
     } else {
-      setMessage(data.error || data.message || 'Could not load groups');
+      setMessage(String(data.error || data.message || data.raw || 'Could not load groups'));
     }
   }
 
-  // Load pending invites for me
+  // Loads pending invites for the logged in user
   async function loadInvites(tkn = token) {
-    const response = await fetch(`${API_BASE}/api/groups/invites`, {
-      headers: { Authorization: `Bearer ${tkn}` }
-    });
+    const { ok, data } = await apiFetch('/api/groups/invites', {}, tkn);
 
-    const data = await safeJson(response);
-
-    if (response.ok) {
+    if (ok) {
       setInvites(Array.isArray(data) ? data : []);
     } else {
-      setMessage(data.error || data.message || 'Could not load invites');
+      setMessage(String(data.error || data.message || data.raw || 'Could not load invites'));
     }
   }
 
-  // Create a new group
+  // Login: if success -> store token -> load everything
+  async function handleLogin() {
+    setMessage('');
+
+    const { ok, data } = await apiFetch(
+      '/api/auth/login',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      },
+      ''
+    );
+
+    if (ok && data.token) {
+      localStorage.setItem('token', data.token);
+      setToken(data.token);
+      setMessage('Logged in.');
+
+      await loadItems(data.token);
+      await loadShareableItems(data.token);
+      await loadGroups(data.token);
+      await loadInvites(data.token);
+    } else {
+      setMessage(String(data.error || data.message || data.raw || 'Login failed'));
+    }
+  }
+
+  // Register: creates account (then user clicks Login)
+  async function handleRegister() {
+    setMessage('');
+
+    const { ok, data } = await apiFetch(
+      '/api/auth/register',
+      {
+        method: 'POST',
+        body: JSON.stringify({ email, password })
+      },
+      ''
+    );
+
+    if (ok) {
+      setMessage('Registered! Now click Login.');
+    } else {
+      setMessage(String(data.error || data.message || data.raw || 'Register failed'));
+    }
+  }
+
+  // Create a group owned by the user
   async function createGroup() {
     setMessage('');
 
@@ -507,27 +453,25 @@ function App() {
       return;
     }
 
-    const response = await fetch(`${API_BASE}/api/groups`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
+    const { ok, data } = await apiFetch(
+      '/api/groups',
+      {
+        method: 'POST',
+        body: JSON.stringify({ name: groupName.trim() })
       },
-      body: JSON.stringify({ name: groupName.trim() })
-    });
+      token
+    );
 
-    const data = await safeJson(response);
-
-    if (response.ok) {
+    if (ok) {
       setMessage('Group created.');
       setGroupName('');
       await loadGroups();
     } else {
-      setMessage(data.error || data.message || 'Could not create group');
+      setMessage(String(data.error || data.message || data.raw || 'Could not create group'));
     }
   }
 
-  // Invite a friend to my group
+  // Invite a friend (by email) into one of your groups
   async function inviteToGroup() {
     setMessage('');
 
@@ -540,47 +484,41 @@ function App() {
       return;
     }
 
-    const response = await fetch(`${API_BASE}/api/groups/${inviteGroupId}/invite`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`
+    const { ok, data } = await apiFetch(
+      `/api/groups/${inviteGroupId}/invite`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          email: inviteEmail.trim(),
+          preference_label: invitePreference.trim() || null
+        })
       },
-      body: JSON.stringify({
-        email: inviteEmail.trim(),
-        preference_label: invitePreference.trim() || null
-      })
-    });
+      token
+    );
 
-    const data = await safeJson(response);
-
-    if (response.ok) {
+    if (ok) {
       setMessage('Invite sent.');
       setInviteEmail('');
       setInvitePreference('');
       await loadGroups();
     } else {
-      setMessage(data.error || data.message || 'Could not invite');
+      setMessage(String(data.error || data.message || data.raw || 'Could not invite'));
     }
   }
 
-  // Accept an invite
+  // Accept an invite (become member of that group)
   async function acceptInvite(inviteId) {
     setMessage('');
 
-    const response = await fetch(`${API_BASE}/api/groups/invites/${inviteId}/accept`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const { ok, data } = await apiFetch(`/api/groups/invites/${inviteId}/accept`, { method: 'POST' }, token);
 
-    const data = await safeJson(response);
-
-    if (response.ok) {
+    if (ok) {
       setMessage('Invite accepted.');
       await loadInvites();
       await loadGroups();
+      await loadShareableItems();
     } else {
-      setMessage(data.error || data.message || 'Could not accept invite');
+      setMessage(String(data.error || data.message || data.raw || 'Could not accept invite'));
     }
   }
 
@@ -588,76 +526,17 @@ function App() {
   async function declineInvite(inviteId) {
     setMessage('');
 
-    const response = await fetch(`${API_BASE}/api/groups/invites/${inviteId}/decline`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` }
-    });
+    const { ok, data } = await apiFetch(`/api/groups/invites/${inviteId}/decline`, { method: 'POST' }, token);
 
-    const data = await safeJson(response);
-
-    if (response.ok) {
+    if (ok) {
       setMessage('Invite declined.');
       await loadInvites();
     } else {
-      setMessage(data.error || data.message || 'Could not decline invite');
+      setMessage(String(data.error || data.message || data.raw || 'Could not decline invite'));
     }
   }
 
-  // -------------------------
-  // API Calls (Auth)
-  // -------------------------
-
-  // Login user and store JWT token
-  async function handleLogin() {
-    setMessage('');
-
-    const response = await fetch(`${API_BASE}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-
-    const data = await safeJson(response);
-
-    if (response.ok) {
-      localStorage.setItem('token', data.token);
-      setToken(data.token);
-      setMessage('Logged in.');
-
-      // load initial data so the UI is ready
-      await loadItems(data.token);
-      await loadShareableItems(data.token);
-      await loadGroups(data.token);
-      await loadInvites(data.token);
-    } else {
-      setMessage(data.error || 'Login failed');
-    }
-  }
-
-  // Register new user
-  async function handleRegister() {
-    setMessage('');
-
-    const response = await fetch(`${API_BASE}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-
-    const data = await safeJson(response);
-
-    if (response.ok) {
-      setMessage('Registered! Now click Login.');
-    } else {
-      setMessage(data.error || 'Register failed');
-    }
-  }
-
-  // -------------------------
-  // External API Search
-  // -------------------------
-
-  // Search OpenFoodFacts via backend endpoint
+  // External API search (OpenFoodFacts) through your backend route
   async function searchOpenFoodFacts() {
     setMessage('');
 
@@ -670,27 +549,21 @@ function App() {
     setSearchLoading(true);
     setSearchResults([]);
 
-    try {
-      const response = await fetch(
-        `${API_BASE}/api/external/openfoodfacts/search?q=${encodeURIComponent(q)}`
-      );
-      const data = await safeJson(response);
+    const { ok, data } = await apiFetch(`/api/external/openfoodfacts/search?q=${encodeURIComponent(q)}`, {}, '');
 
-      if (!response.ok) {
-        setMessage(data.error || 'Search failed');
-        return;
-      }
-
-      setSearchResults(Array.isArray(data) ? data : []);
-      setMessage(`Found ${Array.isArray(data) ? data.length : 0} result(s). Click one to autofill.`);
-    } catch (e) {
-      setMessage('Could not contact external API. Is backend running?');
-    } finally {
+    if (!ok) {
+      setMessage(String(data.error || data.message || data.raw || 'Search failed'));
       setSearchLoading(false);
+      return;
     }
+
+    const arr = Array.isArray(data) ? data : [];
+    setSearchResults(arr);
+    setMessage(`Found ${arr.length} result(s). Click one to autofill.`);
+    setSearchLoading(false);
   }
 
-  // Autofill item name/category from external search result
+  // Autofill item name/category from external API result
   function applySearchResult(p) {
     setNewName(p.name || '');
     if (p.categories) {
@@ -700,9 +573,71 @@ function App() {
     setMessage('Autofilled from OpenFoodFacts. Now choose expiry date and add item.');
   }
 
-  // -------------------------
-  // Social share helper
-  // -------------------------
+  // Add a new fridge item
+  async function addItem() {
+    setMessage('');
+
+    if (!newName || !newExpiry) {
+      setMessage('Please enter name and expiry date.');
+      return;
+    }
+
+    let shared_group_id = null;
+    if (newShareable && shareTarget === 'group') {
+      if (!selectedGroupId) {
+        setMessage('Please choose a group for sharing.');
+        return;
+      }
+      shared_group_id = Number(selectedGroupId);
+    }
+
+    const { ok, data } = await apiFetch(
+      '/api/items',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newName,
+          category: newCategory.trim() || null,
+          expiry_date: newExpiry,
+          is_shareable: newShareable,
+          shared_group_id
+        })
+      },
+      token
+    );
+
+    if (ok) {
+      setMessage('Item added.');
+      setNewName('');
+      setNewExpiry('');
+      setNewCategory('');
+      setNewShareable(false);
+      setShareTarget('public');
+      setSelectedGroupId('');
+
+      await loadItems();
+      await loadShareableItems();
+    } else {
+      setMessage(String(data.error || data.message || data.raw || 'Could not add item'));
+    }
+  }
+
+  // Claim an item from another user (it becomes yours)
+  async function claimItem(itemId) {
+    setMessage('');
+
+    const { ok, data } = await apiFetch(`/api/items/${itemId}/claim`, { method: 'POST' }, token);
+
+    if (ok) {
+      setMessage('Item claimed!');
+      await loadShareableItems();
+      await loadItems();
+    } else {
+      setMessage(String(data.error || data.message || data.raw || 'Could not claim item'));
+    }
+  }
+
+  // Share button uses Web Share API if available; otherwise copies text
   async function shareItem(item) {
     const text = `I have ${item.name} available to share (expires ${item.expiry_date}) on Anti Food Waste App.`;
     const url = window.location.href;
@@ -723,9 +658,7 @@ function App() {
     }
   }
 
-  // -------------------------
-  // Logout
-  // -------------------------
+  // Logout clears everything
   function logout() {
     localStorage.removeItem('token');
     setToken('');
@@ -737,9 +670,7 @@ function App() {
     setMessage('');
   }
 
-  // -------------------------
-  // Derived data: grouped items
-  // -------------------------
+  // Group items by category for a nicer UI
   const groupedItems = useMemo(() => {
     const map = new Map();
     for (const it of items) {
@@ -752,14 +683,13 @@ function App() {
     return entries;
   }, [items]);
 
-  // When token exists, auto-load groups + invites (nice UX)
+  // After login, auto-load group + invites (and you can still press buttons manually)
   useEffect(() => {
     if (!token) return;
     loadGroups();
     loadInvites();
   }, [token]);
 
-  // Responsive layout helpers
   const addRowStyle = isNarrow ? { ...styles.grid3, gridTemplateColumns: '1fr' } : styles.grid3;
   const shareRowStyle = isNarrow
     ? { ...styles.grid3, gridTemplateColumns: '1fr' }
@@ -767,9 +697,7 @@ function App() {
   const groupsGridStyle = isNarrow ? { ...styles.grid2Inner, gridTemplateColumns: '1fr' } : styles.grid2Inner;
   const mainGridStyle = isNarrow ? { ...styles.grid2, gridTemplateColumns: '1fr' } : styles.grid2;
 
-  // -------------------------
-  // AUTH SCREEN (no token)
-  // -------------------------
+  // LOGIN SCREEN
   if (!token) {
     return (
       <div style={styles.page}>
@@ -778,7 +706,10 @@ function App() {
             <div style={styles.authHeader}>
               <div style={styles.logoDot}>AF</div>
               <div style={styles.authTitle}>Welcome</div>
-              <div style={styles.authSub}>Login or create an account to use the app.</div>
+              <div style={styles.authSub}>
+                Login or create an account to use the app.
+                {API_BASE ? <div style={{ marginTop: 6, fontSize: 12, color: '#9ca3af' }}>API: {API_BASE}</div> : null}
+              </div>
             </div>
 
             <div style={styles.authGrid}>
@@ -814,11 +745,6 @@ function App() {
               </div>
 
               {message ? <div style={styles.message}>{message}</div> : null}
-
-              {/* Debug helper so you can see what base URL you are using */}
-              <div style={{ marginTop: 8, fontSize: 12, color: '#6b7280', textAlign: 'center' }}>
-                API Base: {API_BASE || '(not set)'}
-              </div>
             </div>
           </div>
         </div>
@@ -826,9 +752,7 @@ function App() {
     );
   }
 
-  // -------------------------
-  // MAIN APP SCREEN (logged in)
-  // -------------------------
+  // MAIN APP SCREEN
   return (
     <div style={styles.page}>
       <div style={styles.container}>
@@ -859,11 +783,9 @@ function App() {
 
         {message ? <div style={styles.message}>{message}</div> : null}
 
-        {/* Add Item section */}
         <div style={{ ...styles.card, marginTop: 14 }}>
           <h2 style={{ marginTop: 0, marginBottom: 12 }}>Add item</h2>
 
-          {/* External API Search */}
           <div style={{ ...styles.card, boxShadow: 'none', marginBottom: 12 }}>
             <h3 style={{ marginTop: 0, marginBottom: 10 }}>Search product (External API)</h3>
 
@@ -916,7 +838,6 @@ function App() {
             ) : null}
           </div>
 
-          {/* Add item form */}
           <div style={addRowStyle}>
             <div>
               <label style={styles.label}>Name</label>
@@ -951,7 +872,6 @@ function App() {
 
           <div style={{ height: 12 }} />
 
-          {/* Sharing controls */}
           <div style={shareRowStyle}>
             <div>
               <label style={styles.label}>Shareable</label>
@@ -1005,7 +925,6 @@ function App() {
           </div>
         </div>
 
-        {/* Groups + invites */}
         <div style={{ ...styles.card, marginTop: 16 }}>
           <h2 style={{ marginTop: 0, marginBottom: 12 }}>Friends & Groups</h2>
 
@@ -1021,9 +940,9 @@ function App() {
                     <li key={inv.id} style={styles.listItem}>
                       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                         <div style={{ flex: '1 1 auto' }}>
-                          <b>Invite to group:</b> {inv.group?.name || inv.group_name || 'Group'}{' '}
+                          <b>Invite to group:</b> {inv.group?.name || inv.group_name || 'Group'}
                           <span style={{ color: '#666' }}>
-                            {inv.preference_label ? `— pref: ${inv.preference_label}` : ''}
+                            {inv.preference_label ? ` — pref: ${inv.preference_label}` : ''}
                           </span>
                         </div>
                         <button
@@ -1147,9 +1066,7 @@ function App() {
           </div>
         </div>
 
-        {/* Items sections */}
         <div style={mainGridStyle}>
-          {/* My items */}
           <div style={styles.card}>
             <h2 style={{ ...styles.sectionTitle, marginTop: 0, marginBottom: 12 }}>My items</h2>
 
@@ -1170,7 +1087,9 @@ function App() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                               <div style={{ flex: '1 1 auto' }}>
                                 <b>{item.name}</b> — expires {item.expiry_date}{' '}
-                                <span style={{ color: '#666' }}>— shareable: {String(item.is_shareable)}</span>
+                                <span style={{ color: '#666' }}>
+                                  — shareable: {String(item.is_shareable)}
+                                </span>
                                 {status ? (
                                   <span
                                     style={{
@@ -1185,7 +1104,6 @@ function App() {
                                 ) : null}
                               </div>
 
-                              {/* Share button only shown for shareable items */}
                               {item.is_shareable ? (
                                 <button
                                   onClick={() => shareItem(item)}
@@ -1205,7 +1123,6 @@ function App() {
             )}
           </div>
 
-          {/* Shareable items from other users */}
           <div style={styles.card}>
             <h2 style={{ ...styles.sectionTitle, marginTop: 0, marginBottom: 12 }}>Available to claim</h2>
 
@@ -1220,7 +1137,6 @@ function App() {
                         <b>{item.name}</b> — expires {item.expiry_date}{' '}
                         <span style={{ color: '#666' }}>{item.category ? `— ${item.category}` : ''}</span>
                       </div>
-
                       <button
                         onClick={() => claimItem(item.id)}
                         style={{ ...styles.btnSmall, ...styles.btnPrimary }}
